@@ -1,0 +1,24 @@
+str project: demo
+str environment: production
+int port: 8080
+bool debug: false
+
+# Database configuration
+Database:
+ *str name:
+  str host:
+  int port:
+  ?str description:
+  - primary, "localhost", 5432, "Main database"
+  - replica, "db-replica.example.com", 5432
+  - cache, "redis.example.com", 6379, "Redis cache"
+
+# Application configuration
+Application:
+ *str name:
+  str host:
+  int port:
+  ?str description:
+  - web1, "web1.example.com", 8080, "Primary web server"
+  - api1, "api1.example.com", 3000
+  - worker1, "worker1.example.com", 9000, "Background worker"

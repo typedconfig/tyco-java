@@ -1,0 +1,17 @@
+# Maven build output
+/target/
+/tmp-classes/
+
+# IDE/project files
+*.iml
+*.ipr
+*.iws
+/.idea/
+/.vscode/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.mvn/
