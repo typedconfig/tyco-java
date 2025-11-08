@@ -10,8 +10,38 @@
 /.vscode/
 
 # OS cruft
-.DS_Store
-Thumbs.db
+=======
+# Don't track the implementation repositories themselves
+# (they are separate git repos)
+tyco-python/
+tyco-js/
+tyco-javascript/
+tyco-java/
+tyco-cpp/
+tyco-rust/
+tyco-go/
+tyco-vscode/
+tyco-website/
+tyco-test-suite/
 
+# BUT do track the test suite if it's here
+# (comment out if using as submodule)
+# tyco-test-suite/
+
+# OS files
 # Local tooling
 .mvn/
+=======
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp files
+*.tmp
+*.bak
+.cache/
+.m2
