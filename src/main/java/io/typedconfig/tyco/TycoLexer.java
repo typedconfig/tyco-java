@@ -33,7 +33,7 @@ public class TycoLexer {
     private static final String EOL = "\n";
 
     private final TycoContext context;
-    private final Deque<String> lines;
+    private final Deque<SourceLine> lines;
     private final String path;
     private final int numLines;
     private final Map<String, Map<String, TycoAttribute>> defaults = new HashMap<>();
@@ -49,11 +49,14 @@ public class TycoLexer {
         }
         try {
             List<String> fileLines = Files.readAllLines(path);
-            List<String> withNewlines = new ArrayList<>(fileLines.size());
-            for (String line : fileLines) {
-                withNewlines.add(line + EOL);
+            List<SourceLine> sourceLines = new ArrayList<>(fileLines.size());
+            for (int i = 0; i < fileLines.size(); i++) {
+                String raw = fileLines.get(i);
+                String withNewline = raw + EOL;
+                SourceLocation location = new SourceLocation(filePath, i + 1, 1, raw);
+                sourceLines.add(new SourceLine(withNewline, location));
             }
-            TycoLexer lexer = new TycoLexer(context, withNewlines, filePath);
+            TycoLexer lexer = new TycoLexer(context, sourceLines, filePath);
             lexer.process();
             context.cacheLexer(filePath, lexer);
             return lexer;
@@ -62,7 +65,7 @@ public class TycoLexer {
         }
     }
 
-    public TycoLexer(TycoContext context, List<String> lines, String path) {
+    public TycoLexer(TycoContext context, List<SourceLine> lines, String path) {
         this.context = context;
         this.lines = new ArrayDeque<>(lines);
         this.path = path;
@@ -71,10 +74,12 @@ public class TycoLexer {
 
     public void process() {
         while (!lines.isEmpty()) {
-            String line = popLine();
-            if (line == null) {
+            SourceLine lineEntry = popLineEntry();
+            if (lineEntry == null) {
                 break;
             }
+            String line = lineEntry.getText();
+            SourceLocation lineLocation = lineEntry.getLocation();
 
             Matcher includeMatcher = INCLUDE_REGEX.matcher(rstrip(line));
             if (includeMatcher.matches()) {
@@ -87,7 +92,7 @@ public class TycoLexer {
                 lexer.process();
                 for (Map.Entry<String, Map<String, TycoAttribute>> entry : lexer.defaults.entrySet()) {
                     if (this.defaults.containsKey(entry.getKey())) {
-                        throw new TycoParseException("Duplicate struct defaults for " + entry.getKey());
+                        throw new TycoParseException("Duplicate struct defaults for " + entry.getKey(), lineLocation);
                     }
                     this.defaults.put(entry.getKey(), new HashMap<>(entry.getValue()));
                 }
@@ -96,7 +101,7 @@ public class TycoLexer {
 
             Matcher globalMatcher = GLOBAL_SCHEMA_REGEX.matcher(line);
             if (globalMatcher.find()) {
-                loadGlobal(line, globalMatcher);
+                loadGlobal(lineEntry, globalMatcher);
                 continue;
             }
 
@@ -112,15 +117,16 @@ public class TycoLexer {
                 continue;
             }
 
-            if (TycoUtils.stripComments(line).isEmpty()) {
+            if (TycoUtils.stripComments(line, lineLocation).isEmpty()) {
                 continue;
             }
 
-            throw new TycoParseException("Malformatted config file: " + line);
+            throw new TycoParseException("Malformatted config file", lineLocation);
         }
     }
 
-    private void loadGlobal(String line, Matcher match) {
+    private void loadGlobal(SourceLine lineEntry, Matcher match) {
+        String line = lineEntry.getText();
         String option = match.group(1);
         String typeName = match.group(2);
         String arrayFlag = match.group(3);
@@ -128,12 +134,12 @@ public class TycoLexer {
         boolean isArray = "[]".equals(arrayFlag);
         boolean isNullable = "?".equals(option);
 
-        String defaultText = line.substring(match.end()).stripLeading();
-        if (defaultText.isEmpty()) {
-            throw new TycoParseException("Must provide a value when setting globals");
+        SourceLine defaultSlice = lineEntry.sliceFrom(match.end()).trimLeadingWhitespace();
+        if (defaultSlice.getText().isEmpty()) {
+            throw new TycoParseException("Must provide a value when setting globals", defaultSlice.getLocation());
         }
 
-        pushFront(defaultText);
+        pushFront(defaultSlice);
         AttrResult result = loadTycoAttr(List.of(EOL), List.of(), true, attrName);
         result.attribute.applySchemaInfo(typeName, attrName, isNullable, isArray);
         context.setGlobalAttr(attrName, result.attribute);
@@ -146,32 +152,38 @@ public class TycoLexer {
         defaults.put(struct.getTypeName(), new HashMap<>());
 
         while (!lines.isEmpty()) {
-            String peek = lines.peekFirst();
-            if (peek == null) {
+            SourceLine peekEntry = peekLineEntry();
+            if (peekEntry == null) {
                 break;
             }
-            String content = TycoUtils.stripComments(peek);
+            String peek = peekEntry.getText();
+            SourceLocation peekLocation = peekEntry.getLocation();
+            String content = TycoUtils.stripComments(peek, peekLocation);
             if (content.isEmpty()) {
-                popLine();
+                popLineEntry();
                 continue;
             }
 
             Matcher matcher = STRUCT_SCHEMA_REGEX.matcher(peek);
             if (!matcher.find()) {
                 if (content.matches("^\\s+\\w+\\s+\\w+")) {
-                    throw new TycoParseException("Schema attribute missing trailing colon: " + content);
+                    throw new TycoParseException("Schema attribute missing trailing colon: " + content, peekLocation);
                 }
                 break;
             }
 
-            String line = popLine();
+            SourceLine lineEntry = popLineEntry();
+            if (lineEntry == null) {
+                break;
+            }
+
             String option = matcher.group(1);
             String typeName = matcher.group(2);
             String arrayFlag = matcher.group(3);
             String attrName = matcher.group(4);
 
             if (struct.hasAttribute(attrName)) {
-                throw new TycoParseException("Duplicate attribute " + attrName + " in " + struct.getTypeName());
+                throw new TycoParseException("Duplicate attribute " + attrName + " in " + struct.getTypeName(), lineEntry.getLocation());
             }
 
             boolean isArray = "[]".equals(arrayFlag);
@@ -180,9 +192,9 @@ public class TycoLexer {
 
             struct.addAttribute(attrName, typeName, isPrimary, isNullable, isArray);
 
-            String defaultText = line.substring(matcher.end()).stripLeading();
-            if (!TycoUtils.stripComments(defaultText).isEmpty()) {
-                pushFront(defaultText);
+            SourceLine defaultSlice = lineEntry.sliceFrom(matcher.end()).trimLeadingWhitespace();
+            if (!TycoUtils.stripComments(defaultSlice.getText(), defaultSlice.getLocation()).isEmpty()) {
+                pushFront(defaultSlice);
                 AttrResult attrResult = loadTycoAttr(List.of(EOL), List.of(), true, attrName);
                 defaults.get(struct.getTypeName()).put(attrName, attrResult.attribute);
             }
@@ -191,13 +203,15 @@ public class TycoLexer {
 
     private void loadLocalDefaultsAndInstances(TycoStruct struct) {
         while (!lines.isEmpty()) {
-            String peek = lines.peekFirst();
-            if (peek == null) {
+            SourceLine peekEntry = peekLineEntry();
+            if (peekEntry == null) {
                 break;
             }
-            String content = TycoUtils.stripComments(peek);
+            String peek = peekEntry.getText();
+            SourceLocation peekLocation = peekEntry.getLocation();
+            String content = TycoUtils.stripComments(peek, peekLocation);
             if (content.isEmpty()) {
-                popLine();
+                popLineEntry();
                 continue;
             }
             if (!peek.startsWith(" ") && !peek.startsWith("\t")) {
@@ -210,19 +224,22 @@ public class TycoLexer {
             }
 
             if (STRUCT_SCHEMA_REGEX.matcher(peek).find()) {
-                throw new TycoParseException("Cannot add schema attributes after initial construction");
+                throw new TycoParseException("Cannot add schema attributes after initial construction", peekLocation);
             }
 
             Matcher defaultMatcher = STRUCT_DEFAULTS_REGEX.matcher(peek);
             if (defaultMatcher.find()) {
-                popLine();
+                SourceLine lineEntry = popLineEntry();
+                if (lineEntry == null) {
+                    break;
+                }
                 String attrName = defaultMatcher.group(1);
                 if (!struct.hasAttribute(attrName)) {
-                    throw new TycoParseException("Setting invalid default of " + attrName + " for " + struct.getTypeName());
+                    throw new TycoParseException("Setting invalid default of " + attrName + " for " + struct.getTypeName(), lineEntry.getLocation());
                 }
-                String defaultText = peek.substring(defaultMatcher.end()).stripLeading();
-                if (!TycoUtils.stripComments(defaultText).isEmpty()) {
-                    pushFront(defaultText);
+                SourceLine defaultSlice = lineEntry.sliceFrom(defaultMatcher.end()).trimLeadingWhitespace();
+                if (!TycoUtils.stripComments(defaultSlice.getText(), defaultSlice.getLocation()).isEmpty()) {
+                    pushFront(defaultSlice);
                     AttrResult attrResult = loadTycoAttr(List.of(EOL), List.of(), true, attrName);
                     defaults.get(struct.getTypeName()).put(attrName, attrResult.attribute);
                 } else {
@@ -232,12 +249,16 @@ public class TycoLexer {
             }
 
             if (STRUCT_INSTANCE_REGEX.matcher(peek).find()) {
-                String line = popLine();
+                SourceLine lineEntry = popLineEntry();
+                if (lineEntry == null) {
+                    break;
+                }
+                String line = lineEntry.getText();
                 Matcher instanceMatcher = STRUCT_INSTANCE_REGEX.matcher(line);
                 if (!instanceMatcher.find()) {
-                    throw new TycoParseException("Invalid struct instance line: " + line);
+                    throw new TycoParseException("Invalid struct instance line: " + line, lineEntry.getLocation());
                 }
-                String remainder = line.substring(instanceMatcher.end()).stripLeading();
+                SourceLine remainder = lineEntry.sliceFrom(instanceMatcher.end()).trimLeadingWhitespace();
                 pushFront(remainder);
 
                 List<TycoAttribute> instArgs = new ArrayList<>();
@@ -245,18 +266,26 @@ public class TycoLexer {
                     if (lines.isEmpty()) {
                         break;
                     }
-                    String instContent = TycoUtils.stripComments(lines.peekFirst());
+                    SourceLine instEntry = peekLineEntry();
+                    if (instEntry == null) {
+                        break;
+                    }
+                    String instContent = TycoUtils.stripComments(instEntry.getText(), instEntry.getLocation());
                     if (instContent.isEmpty()) {
-                        popLine();
+                        popLineEntry();
                         break;
                     }
 
                     if ("\\".equals(instContent)) {
-                        popLine();
+                        popLineEntry();
                         if (!lines.isEmpty()) {
-                            String next = lines.peekFirst();
-                            String trimmed = lstrip(next);
-                            replaceCurrentLine(trimmed);
+                            SourceLine nextEntry = peekLineEntry();
+                            if (nextEntry != null) {
+                                SourceLine trimmed = nextEntry.trimLeadingWhitespace();
+                                if (trimmed != nextEntry) {
+                                    replaceCurrentLine(trimmed);
+                                }
+                            }
                         }
                         continue;
                     }
@@ -295,41 +324,54 @@ public class TycoLexer {
             throw new TycoParseException("Syntax error: no content found");
         }
 
-        String current = lines.peekFirst();
-        String lstripped = lstrip(current);
-        if (!lstripped.equals(current)) {
-            replaceCurrentLine(lstripped);
-            current = lstripped;
+        SourceLine currentEntry = peekLineEntry();
+        if (currentEntry == null) {
+            throw new TycoParseException("Syntax error: no content found");
         }
+        SourceLine lstrippedEntry = currentEntry.trimLeadingWhitespace();
+        if (lstrippedEntry != currentEntry) {
+            replaceCurrentLine(lstrippedEntry);
+            currentEntry = lstrippedEntry;
+        }
+        String current = currentEntry.getText();
+        SourceLocation currentLocation = currentEntry.getLocation();
+
         Matcher colonMatch = IDENTIFIER_COLON_REGEX.matcher(current);
         if (colonMatch.find()) {
             if (attrName != null) {
-                throw new TycoParseException("Colon found inside content - wrap string in quotes: " + colonMatch.group(1));
+                SourceLocation errorLocation = currentLocation.advance(colonMatch.start());
+                throw new TycoParseException("Colon found inside content - wrap string in quotes: " + colonMatch.group(1), errorLocation);
             }
             attrName = colonMatch.group(1);
-            String remainder = current.substring(colonMatch.end());
+            SourceLine remainder = currentEntry.sliceFrom(colonMatch.end());
             replaceCurrentLine(remainder);
             return loadTycoAttrWithSets(goodDelim, badDelim, popEmptyLines, attrName);
         }
 
         TycoAttribute attr;
         String delim;
-        current = lines.peekFirst();
-        if (current == null || current.isEmpty()) {
+        currentEntry = peekLineEntry();
+        if (currentEntry == null) {
             throw new TycoParseException("Unexpected empty line when parsing attribute");
+        }
+        current = currentEntry.getText();
+        currentLocation = currentEntry.getLocation();
+        if (current.isEmpty()) {
+            throw new TycoParseException("Unexpected empty line when parsing attribute", currentLocation);
         }
         char ch = current.charAt(0);
 
         if (ch == '[') {
-            replaceCurrentLine(current.substring(1));
+            replaceCurrentLine(currentEntry.sliceFrom(1));
             List<TycoAttribute> arrayContent = loadArray(']');
             attr = new TycoArray(context, arrayContent);
+            attr.setLocation(currentLocation);
             delim = stripNextDelim(goodDelim);
         } else if (Character.isLetterOrDigit(ch) || ch == '_') {
             Matcher instMatcher = Pattern.compile("^(\\w+)\\(").matcher(current);
             if (instMatcher.find()) {
                 String typeName = instMatcher.group(1);
-                replaceCurrentLine(current.substring(instMatcher.end()));
+                replaceCurrentLine(currentEntry.sliceFrom(instMatcher.end()));
                 List<TycoAttribute> instArgs = loadArray(')');
                 TycoStruct struct = context.getStruct(typeName);
                 if (struct == null || !struct.getPrimaryKeys().isEmpty()) {
@@ -338,6 +380,7 @@ public class TycoLexer {
                     Map<String, TycoAttribute> defaultKwargs = defaults.getOrDefault(typeName, new HashMap<>());
                     attr = struct.createInlineInstance(instArgs, defaultKwargs);
                 }
+                attr.setLocation(currentLocation);
                 delim = stripNextDelim(goodDelim);
             } else {
                 AttrResult next = stripNextAttrAndDelim(goodDelim, badDelim);
@@ -347,12 +390,13 @@ public class TycoLexer {
         } else if (ch == '"' || ch == '\'') {
             String triple = String.valueOf(ch).repeat(3);
             if (current.startsWith(triple)) {
-                String tripleString = loadTripleString(triple);
+                String tripleString = loadTripleString(triple, currentLocation);
                 attr = new TycoValue(context, tripleString);
             } else {
-                String singleString = loadSingleString(String.valueOf(ch));
+                String singleString = loadSingleString(String.valueOf(ch), currentLocation);
                 attr = new TycoValue(context, singleString);
             }
+            attr.setLocation(currentLocation);
             delim = stripNextDelim(goodDelim);
         } else {
             AttrResult next = stripNextAttrAndDelim(goodDelim, badDelim);
@@ -371,17 +415,23 @@ public class TycoLexer {
 
         while (true) {
             if (lines.isEmpty()) {
-                throw new TycoParseException("Could not find " + closingChar);
+                throw new TycoParseException("Could not find " + closingChar, peekLineLocation());
             }
 
-            String peek = lines.peekFirst();
-            if (TycoUtils.stripComments(peek).isEmpty()) {
-                popLine();
+            SourceLine peekEntry = peekLineEntry();
+            if (peekEntry == null) {
+                throw new TycoParseException("Could not find " + closingChar, SourceLocation.unknown());
+            }
+            String peek = peekEntry.getText();
+            SourceLocation peekLocation = peekEntry.getLocation();
+            if (TycoUtils.stripComments(peek, peekLocation).isEmpty()) {
+                popLineEntry();
                 continue;
             }
 
             if (peek.startsWith(String.valueOf(closingChar))) {
-                replaceCurrentLine(peek.substring(1));
+                SourceLine remainder = peekEntry.sliceFrom(1);
+                replaceCurrentLine(remainder);
                 break;
             }
 
@@ -395,36 +445,47 @@ public class TycoLexer {
         return array;
     }
 
-    private String loadTripleString(String triple) {
+    private String loadTripleString(String triple, SourceLocation startLocation) {
         boolean isLiteral = "'''".equals(triple);
         int start = 3;
         List<String> contents = new ArrayList<>();
 
         while (true) {
             if (lines.isEmpty()) {
-                throw new TycoParseException("Unclosed triple quote");
+                throw new TycoParseException("Unclosed triple quote", startLocation);
             }
-            String line = popLine();
+            SourceLine lineEntry = popLineEntry();
+            if (lineEntry == null) {
+                throw new TycoParseException("Unclosed triple quote", startLocation);
+            }
+            String line = lineEntry.getText();
             int end = line.indexOf(triple, start);
 
             if (end != -1) {
                 int endIdx = end + 3;
                 String content = line.substring(0, endIdx);
-                String remainder = line.substring(endIdx);
                 contents.add(content);
 
+                SourceLine remainderEntry = lineEntry.sliceFrom(endIdx);
+                String remainder = remainderEntry.getText();
                 char tripleChar = triple.charAt(0);
+                int consumed = 0;
                 for (int i = 0; i < 2; i++) {
                     if (!remainder.isEmpty() && remainder.charAt(0) == tripleChar) {
                         int lastIdx = contents.size() - 1;
                         contents.set(lastIdx, contents.get(lastIdx) + tripleChar);
                         remainder = remainder.substring(1);
+                        consumed++;
                     } else {
                         break;
                     }
                 }
-
-                pushFront(remainder);
+                if (consumed > 0) {
+                    remainderEntry = remainderEntry.sliceFrom(consumed);
+                }
+                if (!remainderEntry.getText().isEmpty()) {
+                    pushFront(remainderEntry);
+                }
                 break;
             } else {
                 if (!isLiteral && line.endsWith("\\" + EOL)) {
@@ -434,11 +495,17 @@ public class TycoLexer {
                     }
                     contents.add(line.substring(0, cut));
                     while (!lines.isEmpty()) {
-                        String next = lines.peekFirst();
-                        String trimmed = lstrip(next);
-                        replaceCurrentLine(trimmed);
-                        if (trimmed.isEmpty()) {
-                            popLine();
+                        SourceLine nextEntry = peekLineEntry();
+                        if (nextEntry == null) {
+                            break;
+                        }
+                        SourceLine trimmed = nextEntry.trimLeadingWhitespace();
+                        if (trimmed != nextEntry) {
+                            replaceCurrentLine(trimmed);
+                            nextEntry = trimmed;
+                        }
+                        if (nextEntry.getText().isEmpty()) {
+                            popLineEntry();
                         } else {
                             break;
                         }
@@ -458,33 +525,39 @@ public class TycoLexer {
         for (int i = 0; i < finalContent.length(); i++) {
             char ch = finalContent.charAt(i);
             if (TycoUtils.ILLEGAL_STR_CHARS_MULTILINE.contains(ch)) {
-                throw new TycoParseException("Invalid characters found in literal multiline string: " + ch);
+                throw new TycoParseException("Invalid characters found in literal multiline string: " + ch, startLocation);
             }
         }
         return finalContent.toString();
     }
 
-    private String loadSingleString(String quote) {
+    private String loadSingleString(String quote, SourceLocation startLocation) {
         boolean isLiteral = "'".equals(quote);
         int start = 1;
-        String line = popLine();
+        SourceLine lineEntry = popLineEntry();
+        if (lineEntry == null) {
+            throw new TycoParseException("Unclosed single-line string for " + quote, startLocation);
+        }
+        String line = lineEntry.getText();
 
         while (true) {
             int end = line.indexOf(quote, start);
             if (end == -1) {
-                throw new TycoParseException("Unclosed single-line string for " + quote + ": " + line);
+                throw new TycoParseException("Unclosed single-line string for " + quote + ": " + line, startLocation);
             }
 
             if (isLiteral || line.charAt(end - 1) != '\\') {
                 String finalContent = line.substring(0, end + 1);
-                String remainder = line.substring(end + 1);
                 for (int i = 0; i < finalContent.length(); i++) {
                     char ch = finalContent.charAt(i);
                     if (TycoUtils.ILLEGAL_STR_CHARS.contains(ch)) {
-                        throw new TycoParseException("Invalid characters found in literal string: " + ch);
+                        throw new TycoParseException("Invalid characters found in literal string: " + ch, startLocation);
                     }
                 }
-                pushFront(remainder);
+                SourceLine remainderEntry = lineEntry.sliceFrom(end + 1);
+                if (!remainderEntry.getText().isEmpty()) {
+                    pushFront(remainderEntry);
+                }
                 return finalContent;
             }
 
@@ -493,10 +566,12 @@ public class TycoLexer {
     }
 
     private AttrResult stripNextAttrAndDelim(Set<String> goodDelim, Set<String> badDelim) {
-        String current = lines.peekFirst();
-        if (current == null) {
+        SourceLine currentEntry = peekLineEntry();
+        if (currentEntry == null) {
             throw new TycoParseException("Unexpected end of input");
         }
+        String current = currentEntry.getText();
+        SourceLocation baseLocation = currentEntry.getLocation();
 
         String searchSpace = current;
         int commentIdx = current.indexOf('#');
@@ -508,12 +583,7 @@ public class TycoLexer {
         int bestIndex = -1;
         String bestDelim = null;
         for (String delim : allDelims) {
-            int idx;
-            if (EOL.equals(delim)) {
-                idx = searchSpace.length();
-            } else {
-                idx = searchSpace.indexOf(delim);
-            }
+            int idx = EOL.equals(delim) ? searchSpace.length() : searchSpace.indexOf(delim);
             if (idx >= 0 && (bestIndex == -1 || idx < bestIndex)) {
                 bestIndex = idx;
                 bestDelim = delim;
@@ -521,14 +591,27 @@ public class TycoLexer {
         }
 
         if (bestDelim == null) {
-            throw new TycoParseException("Should have found some delimiter " + allDelims + ": " + current);
+            throw new TycoParseException("Should have found some delimiter " + allDelims + ": " + current, baseLocation);
         }
         if (badDelim.contains(bestDelim)) {
-            throw new TycoParseException("Bad delimiter encountered: " + bestDelim);
+            throw new TycoParseException("Bad delimiter encountered: " + bestDelim, baseLocation.advance(bestIndex));
         }
 
-        String text = searchSpace.substring(0, bestIndex).trim();
+        String rawText = searchSpace.substring(0, bestIndex);
+        int leading = 0;
+        while (leading < rawText.length() && Character.isWhitespace(rawText.charAt(leading))) {
+            leading++;
+        }
+        int trailing = rawText.length();
+        while (trailing > leading && Character.isWhitespace(rawText.charAt(trailing - 1))) {
+            trailing--;
+        }
+        String text = rawText.substring(leading, trailing);
+        SourceLocation valueLocation = baseLocation.advance(leading);
+
         TycoValue attr = new TycoValue(context, text);
+        attr.setLocation(valueLocation);
+
         if (EOL.equals(bestDelim)) {
             lines.pollFirst();
         } else {
@@ -536,7 +619,8 @@ public class TycoLexer {
             if (advance > current.length()) {
                 advance = current.length();
             }
-            replaceCurrentLine(current.substring(advance));
+            SourceLine remainder = currentEntry.sliceFrom(advance);
+            replaceCurrentLine(remainder);
         }
         return new AttrResult(attr, bestDelim);
     }
@@ -545,28 +629,26 @@ public class TycoLexer {
         if (lines.isEmpty()) {
             throw new TycoParseException("Unexpected end of input looking for delimiters " + goodDelim);
         }
-        String current = lines.peekFirst();
+        SourceLine currentEntry = peekLineEntry();
+        if (currentEntry == null) {
+            throw new TycoParseException("Unexpected end of input looking for delimiters " + goodDelim);
+        }
+        String current = currentEntry.getText();
+        SourceLocation location = currentEntry.getLocation();
         for (String delim : goodDelim) {
             if (current.startsWith(delim)) {
-                replaceCurrentLine(current.substring(delim.length()));
+                SourceLine remainder = currentEntry.sliceFrom(delim.length());
+                replaceCurrentLine(remainder);
                 return delim;
             }
         }
 
-        if (goodDelim.contains(EOL) && TycoUtils.stripComments(current).isEmpty()) {
-            popLine();
+        if (goodDelim.contains(EOL) && TycoUtils.stripComments(current, location).isEmpty()) {
+            popLineEntry();
             return EOL;
         }
 
-        throw new TycoParseException("Should have found next delimiter " + goodDelim + ": " + current);
-    }
-
-    private static String lstrip(String value) {
-        int idx = 0;
-        while (idx < value.length() && (value.charAt(idx) == ' ' || value.charAt(idx) == '\t')) {
-            idx++;
-        }
-        return value.substring(idx);
+        throw new TycoParseException("Should have found next delimiter " + goodDelim + ": " + current, location);
     }
 
     private static String rstrip(String value) {
@@ -582,19 +664,35 @@ public class TycoLexer {
         return value.substring(0, end);
     }
 
-    private String popLine() {
+    private SourceLine popLineEntry() {
         return lines.pollFirst();
     }
 
-    private void pushFront(String line) {
+    private void pushFront(SourceLine line) {
         if (line != null) {
             lines.addFirst(line);
         }
     }
 
-    private void replaceCurrentLine(String line) {
+    private void replaceCurrentLine(SourceLine line) {
         lines.pollFirst();
-        lines.addFirst(line);
+        if (line != null) {
+            lines.addFirst(line);
+        }
+    }
+
+    private SourceLine peekLineEntry() {
+        return lines.peekFirst();
+    }
+
+    private String peekLineText() {
+        SourceLine entry = lines.peekFirst();
+        return entry != null ? entry.getText() : null;
+    }
+
+    private SourceLocation peekLineLocation() {
+        SourceLine entry = lines.peekFirst();
+        return entry != null ? entry.getLocation() : null;
     }
 
     private static Set<String> union(Set<String> a, Set<String> b) {

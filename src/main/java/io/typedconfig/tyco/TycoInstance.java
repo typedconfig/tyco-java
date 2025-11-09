@@ -14,6 +14,7 @@ public class TycoInstance implements TycoAttribute {
     private Boolean isArray;     // set later
     protected Object parent;       // set later
     private Map<String, Object> objectCache;
+    private SourceLocation location;
     
     public TycoInstance(TycoContext context, String typeName, Map<String, TycoAttribute> instKwargs) {
         this.context = context;
@@ -44,13 +45,29 @@ public class TycoInstance implements TycoAttribute {
         for (Map.Entry<String, TycoAttribute> entry : instKwargs.entrySet()) {
             copiedKwargs.put(entry.getKey(), entry.getValue().makeCopy());
         }
-        return new TycoInstance(context, typeName, copiedKwargs);
+        TycoInstance copy = new TycoInstance(context, typeName, copiedKwargs);
+        copy.attrName = this.attrName;
+        copy.isNullable = this.isNullable;
+        copy.isArray = this.isArray;
+        copy.parent = this.parent;
+        copy.location = this.location;
+        return copy;
+    }
+
+    @Override
+    public void setLocation(SourceLocation location) {
+        this.location = location;
+    }
+
+    @Override
+    public SourceLocation getLocation() {
+        return location;
     }
     
     @Override
     public void applySchemaInfo(String typeName, String attrName, Boolean isNullable, Boolean isArray) {
         if (typeName != null && !this.typeName.equals(typeName)) {
-            throw new TycoParseException("Expected " + typeName + " for " + parent + "." + attrName + " and instead have " + this);
+            throw new TycoParseException("Expected " + typeName + " for " + parent + "." + attrName + " and instead have " + this, location);
         }
         if (attrName != null) {
             this.attrName = attrName;
@@ -63,7 +80,7 @@ public class TycoInstance implements TycoAttribute {
         }
         
         if (Boolean.TRUE.equals(this.isArray)) {
-            throw new TycoParseException("Expected array for " + parent + "." + attrName + ", instead have " + this);
+            throw new TycoParseException("Expected array for " + parent + "." + attrName + ", instead have " + this, location);
         }
     }
     

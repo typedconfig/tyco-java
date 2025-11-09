@@ -14,6 +14,7 @@ public class TycoArray implements TycoAttribute {
     private Boolean isArray;
     private Object parent;
     private List<Object> objectCache;
+    private SourceLocation location;
     
     public TycoArray(TycoContext context, List<TycoAttribute> content) {
         this.context = context;
@@ -35,7 +36,23 @@ public class TycoArray implements TycoAttribute {
         for (TycoAttribute attr : content) {
             copiedContent.add(attr.makeCopy());
         }
-        return new TycoArray(context, copiedContent);
+        TycoArray copy = new TycoArray(context, copiedContent);
+        copy.location = this.location;
+        copy.typeName = this.typeName;
+        copy.attrName = this.attrName;
+        copy.isNullable = this.isNullable;
+        copy.isArray = this.isArray;
+        return copy;
+    }
+
+    @Override
+    public void setLocation(SourceLocation location) {
+        this.location = location;
+    }
+
+    @Override
+    public SourceLocation getLocation() {
+        return location;
     }
     
     @Override
@@ -58,8 +75,8 @@ public class TycoArray implements TycoAttribute {
         }
         
         if (Boolean.FALSE.equals(this.isArray)) {
-            throw new TycoParseException("Schema for " + parent + "." + attrName + " needs to indicate array with []");
-        }
+            throw new TycoParseException("Schema for " + parent + "." + attrName + " needs to indicate array with []", location);
+    }
     }
     
     @Override

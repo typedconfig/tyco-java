@@ -16,6 +16,7 @@ public class TycoReference implements TycoAttribute {
     private Boolean isArray;
     private Object parent;
     private Object rendered = UNRENDERED;
+    private SourceLocation location;
     
     public TycoReference(TycoContext context, List<TycoAttribute> instArgs, String typeName) {
         this.context = context;
@@ -37,13 +38,29 @@ public class TycoReference implements TycoAttribute {
         for (TycoAttribute arg : instArgs) {
             copiedArgs.add(arg.makeCopy());
         }
-        return new TycoReference(context, copiedArgs, typeName);
+        TycoReference copy = new TycoReference(context, copiedArgs, typeName);
+        copy.attrName = this.attrName;
+        copy.isNullable = this.isNullable;
+        copy.isArray = this.isArray;
+        copy.parent = this.parent;
+        copy.location = this.location;
+        return copy;
+    }
+
+    @Override
+    public void setLocation(SourceLocation location) {
+        this.location = location;
+    }
+
+    @Override
+    public SourceLocation getLocation() {
+        return location;
     }
     
     @Override
     public void applySchemaInfo(String typeName, String attrName, Boolean isNullable, Boolean isArray) {
         if (typeName != null && !this.typeName.equals(typeName)) {
-            throw new TycoParseException("Expected " + typeName + " for " + parent + "." + attrName + " and instead have " + this);
+            throw new TycoParseException("Expected " + typeName + " for " + parent + "." + attrName + " and instead have " + this, location);
         }
         if (attrName != null) {
             this.attrName = attrName;
@@ -56,7 +73,7 @@ public class TycoReference implements TycoAttribute {
         }
         
         if (Boolean.TRUE.equals(this.isArray)) {
-            throw new TycoParseException("Expected array for " + parent + "." + attrName + ", instead have " + this);
+            throw new TycoParseException("Expected array for " + parent + "." + attrName + ", instead have " + this, location);
         }
     }
     
@@ -74,15 +91,15 @@ public class TycoReference implements TycoAttribute {
     @Override
     public void renderReferences() {
         if (rendered != UNRENDERED) {
-            throw new TycoParseException("Rendered multiple times " + this);
+            throw new TycoParseException("Rendered multiple times " + this, location);
         }
-        
+
         TycoStruct struct = context.getStruct(typeName);
         if (struct == null) {
-            throw new TycoParseException("Bad type name for reference: " + typeName + " " + instArgs);
+            throw new TycoParseException("Bad type name for reference: " + typeName + " " + instArgs, location);
         }
         
-        rendered = struct.loadReference(instArgs);
+        rendered = struct.loadReference(instArgs, location);
     }
     
     @Override
@@ -121,7 +138,7 @@ public class TycoReference implements TycoAttribute {
         if (rendered instanceof TycoInstance) {
             return ((TycoInstance) rendered).get(attrName);
         }
-        throw new TycoParseException("Cannot access attribute on unrendered reference");
+        throw new TycoParseException("Cannot access attribute on unrendered reference", location);
     }
     
     @Override

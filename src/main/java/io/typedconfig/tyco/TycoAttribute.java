@@ -16,6 +16,20 @@ public interface TycoAttribute {
      * Set the parent object for template resolution
      */
     void setParent(Object parent);
+
+    /**
+     * Attach source location metadata for improved error reporting
+     */
+    default void setLocation(SourceLocation location) {
+        // default no-op for implementations that do not track location
+    }
+
+    /**
+     * Retrieve the source location if available
+     */
+    default SourceLocation getLocation() {
+        return null;
+    }
     
     /**
      * Get the attribute name

@@ -89,13 +89,14 @@ public class TycoStruct {
         for (int i = 0; i < instArgs.size(); i++) {
             TycoAttribute attr = instArgs.get(i);
             String attrName = attr.getAttrName();
-            
+            SourceLocation attrLocation = attr.getLocation();
+
             if (attrName == null) {
                 if (kwargsOnly) {
-                    throw new TycoParseException("Cannot use positional values after keyed values: " + instArgs);
+                    throw new TycoParseException("Cannot use positional values after keyed values: " + instArgs, attrLocation);
                 }
                 if (i >= attrNames.size()) {
-                    throw new TycoParseException("Too many positional arguments for " + typeName);
+                    throw new TycoParseException("Too many positional arguments for " + typeName, attrLocation);
                 }
                 attrName = attrNames.get(i);
                 attr.setAttrName(attrName);
@@ -105,9 +106,11 @@ public class TycoStruct {
             
             instKwargs.put(attrName, attr);
         }
-        
+
         Map<String, TycoAttribute> completeKwargs = resolveCompleteKwargs(instKwargs, defaultKwargs);
-        return new TycoInstance(context, typeName, completeKwargs);
+        TycoInstance instance = new TycoInstance(context, typeName, completeKwargs);
+        instance.setLocation(firstLocation(instArgs, null));
+        return instance;
     }
     
     /**
@@ -123,9 +126,9 @@ public class TycoStruct {
             for (String keyAttr : primaryKeys) {
                 key.add(inst.getAttribute(keyAttr).getRendered());
             }
-            
+
             if (mappedInstances.containsKey(key)) {
-                throw new TycoParseException(key + " already found for " + typeName + ": " + mappedInstances.get(key));
+                throw new TycoParseException(key + " already found for " + typeName + ": " + mappedInstances.get(key), inst.getLocation());
             }
             mappedInstances.put(key, inst);
         }
@@ -134,20 +137,21 @@ public class TycoStruct {
     /**
      * Load reference by primary key arguments
      */
-    public TycoInstance loadReference(List<TycoAttribute> instArgs) {
+    public TycoInstance loadReference(List<TycoAttribute> instArgs, SourceLocation referenceLocation) {
         Map<String, TycoAttribute> instKwargs = new HashMap<>();
         boolean kwargsOnly = false;
-        
+
         for (int i = 0; i < instArgs.size(); i++) {
             TycoAttribute attr = instArgs.get(i);
             String attrName = attr.getAttrName();
-            
+            SourceLocation attrLocation = attr.getLocation();
+
             if (attrName == null) {
                 if (kwargsOnly) {
-                    throw new TycoParseException("Cannot use positional values after keyed values: " + instArgs);
+                    throw new TycoParseException("Cannot use positional values after keyed values: " + instArgs, attrLocation);
                 }
                 if (i >= primaryKeys.size()) {
-                    throw new TycoParseException("Too many arguments for reference to " + typeName);
+                    throw new TycoParseException("Too many arguments for reference to " + typeName, attrLocation);
                 }
                 attrName = primaryKeys.get(i);
                 attr.setAttrName(attrName);
@@ -171,7 +175,7 @@ public class TycoStruct {
         
         TycoInstance result = mappedInstances.get(key);
         if (result == null) {
-            throw new TycoParseException("Unable to find reference of " + typeName + "(" + key + ")");
+            throw new TycoParseException("Unable to find reference of " + typeName + "(" + key + ")", firstLocation(instArgs, referenceLocation));
         }
         return result;
     }
@@ -198,6 +202,15 @@ public class TycoStruct {
         }
         
         return completeKwargs;
+    }
+
+    private SourceLocation firstLocation(List<TycoAttribute> attrs, SourceLocation fallback) {
+        for (TycoAttribute attr : attrs) {
+            if (attr != null && attr.getLocation() != null) {
+                return attr.getLocation();
+            }
+        }
+        return fallback;
     }
     
     @Override

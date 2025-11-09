@@ -1,6 +1,7 @@
 package io.typedconfig.tyco;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,5 +47,14 @@ public class TycoParserTest {
                     .as("Fixture %s", name)
                     .isEqualTo(expected);
         }
+    }
+
+    @Test
+    void reportsLineAndColumnOnErrors() {
+        TycoParseException ex = assertThrows(TycoParseException.class, () -> TycoParser.loads("not-valid"));
+        assertThat(ex.getLocation()).isNotNull();
+        assertThat(ex.getLocation().getLine()).isEqualTo(1);
+        assertThat(ex.getLocation().getColumn()).isEqualTo(1);
+        assertThat(ex.getLine()).isEqualTo("not-valid");
     }
 }

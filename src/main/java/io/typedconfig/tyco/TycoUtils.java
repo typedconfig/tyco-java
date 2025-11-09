@@ -49,6 +49,10 @@ final class TycoUtils {
     }
 
     static String stripComments(String line) {
+        return stripComments(line, null);
+    }
+
+    static String stripComments(String line, SourceLocation location) {
         if (line == null) {
             return "";
         }
@@ -62,7 +66,8 @@ final class TycoUtils {
         for (int i = 0; i < comment.length(); i++) {
             char ch = comment.charAt(i);
             if (ILLEGAL_STR_CHARS.contains(ch)) {
-                throw new TycoParseException("Invalid characters in comments: " + ch);
+                SourceLocation errorLocation = location != null ? location.advance(idx + 1 + i) : null;
+                throw new TycoParseException("Invalid characters in comments: " + ch, errorLocation);
             }
         }
         return rstrip(content);

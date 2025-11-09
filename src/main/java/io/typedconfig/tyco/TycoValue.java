@@ -18,6 +18,7 @@ public class TycoValue implements TycoAttribute {
 
     private final TycoContext context;
     private final String content;
+    private SourceLocation location;
 
     private String typeName;
     private String attrName;
@@ -43,14 +44,25 @@ public class TycoValue implements TycoAttribute {
         if (this.rendered != UNRENDERED) {
             copy.rendered = this.rendered;
         }
+        copy.location = this.location;
         return copy;
+    }
+
+    @Override
+    public void setLocation(SourceLocation location) {
+        this.location = location;
+    }
+
+    @Override
+    public SourceLocation getLocation() {
+        return location;
     }
 
     @Override
     public void applySchemaInfo(String typeName, String attrName, Boolean isNullable, Boolean isArray) {
         if (typeName != null) {
             if (!BASE_TYPES.contains(typeName) && !"null".equals(typeName)) {
-                throw new TycoParseException(typeName + " expected for " + content + ", likely needs " + typeName + "(" + content + ")");
+                throw new TycoParseException(typeName + " expected for " + content + ", likely needs " + typeName + "(" + content + ")", location);
             }
             this.typeName = typeName;
         }
@@ -65,7 +77,7 @@ public class TycoValue implements TycoAttribute {
         }
 
         if (Boolean.TRUE.equals(this.isArray) && !(Boolean.TRUE.equals(this.isNullable) && "null".equals(content))) {
-            throw new TycoParseException("Array expected for " + parent + "." + attrName + ": " + this);
+            throw new TycoParseException("Array expected for " + parent + "." + attrName + ": " + this, location);
         }
     }
 
@@ -87,7 +99,7 @@ public class TycoValue implements TycoAttribute {
     @Override
     public void renderBaseContent() {
         if (typeName == null || attrName == null) {
-            throw new TycoParseException("Attributes not set for " + attrName + ": " + this);
+            throw new TycoParseException("Attributes not set for " + attrName + ": " + this, location);
         }
 
         String raw = this.content;
@@ -144,7 +156,7 @@ public class TycoValue implements TycoAttribute {
             } else if ("false".equals(raw)) {
                 baseRendered = Boolean.FALSE;
             } else {
-                throw new TycoParseException("Boolean " + attrName + " for " + parent + " not in (true, false): " + raw);
+                throw new TycoParseException("Boolean " + attrName + " for " + parent + " not in (true, false): " + raw, location);
             }
         } else if ("date".equals(typeName)) {
             baseRendered = raw;
@@ -153,7 +165,7 @@ public class TycoValue implements TycoAttribute {
         } else if ("datetime".equals(typeName)) {
             baseRendered = TycoUtils.normalizeDateTimeLiteral(raw);
         } else {
-            throw new TycoParseException("Unknown type: " + typeName);
+            throw new TycoParseException("Unknown type: " + typeName, location);
         }
 
         this.rendered = baseRendered;
@@ -187,7 +199,7 @@ public class TycoValue implements TycoAttribute {
                         obj = null;
                     }
                     if (obj == null) {
-                        throw new TycoParseException("Traversing parents hit base instance");
+                        throw new TycoParseException("Traversing parents hit base instance", location);
                     }
                     templateVar = templateVar.substring(1);
                 }
@@ -207,7 +219,7 @@ public class TycoValue implements TycoAttribute {
                 } else if (obj instanceof Map) {
                     obj = ((Map<?, ?>) obj).get(attr);
                 } else {
-                    throw new TycoParseException("Cannot access attribute " + attr + " on " + obj);
+                    throw new TycoParseException("Cannot access attribute " + attr + " on " + obj, location);
                 }
             }
 
@@ -215,7 +227,7 @@ public class TycoValue implements TycoAttribute {
             if (obj instanceof TycoAttribute) {
                 Object attrRendered = ((TycoAttribute) obj).getRendered();
                 if (!(attrRendered instanceof String || attrRendered instanceof Number)) {
-                    throw new TycoParseException("Can not templatize objects other than strings or ints: " + obj + " (" + this + ")");
+                    throw new TycoParseException("Can not templatize objects other than strings or ints: " + obj + " (" + this + ")", location);
                 }
                 replacement = String.valueOf(attrRendered);
             } else {

@@ -62,7 +62,7 @@ public final class TycoParser {
      */
     public static Map<String, Object> loads(String content) {
         TycoContext context = new TycoContext();
-        List<String> lines = splitContentIntoLines(content);
+        List<SourceLine> lines = splitContentIntoLines(content);
         TycoLexer lexer = new TycoLexer(context, lines, null);
         lexer.process();
         context.renderContent();
@@ -79,20 +79,24 @@ public final class TycoParser {
         return loads(content);
     }
 
-    private static List<String> splitContentIntoLines(String content) {
+    private static List<SourceLine> splitContentIntoLines(String content) {
         String normalized = content.replace("\r\n", "\n");
-        List<String> lines = new ArrayList<>();
+        List<SourceLine> lines = new ArrayList<>();
         int start = 0;
+        int lineNumber = 1;
         for (int i = 0; i < normalized.length(); i++) {
             if (normalized.charAt(i) == '\n') {
-                lines.add(normalized.substring(start, i + 1));
+                String line = normalized.substring(start, i + 1);
+                String raw = line.endsWith("\n") ? line.substring(0, line.length() - 1) : line;
+                lines.add(new SourceLine(line, new SourceLocation(null, lineNumber++, 1, raw)));
                 start = i + 1;
             }
         }
         if (start < normalized.length()) {
-            lines.add(normalized.substring(start) + "\n");
+            String remainder = normalized.substring(start);
+            lines.add(new SourceLine(remainder + "\n", new SourceLocation(null, lineNumber, 1, remainder)));
         } else if (lines.isEmpty()) {
-            lines.add("\n");
+            lines.add(new SourceLine("\n", new SourceLocation(null, 1, 1, "")));
         }
         return lines;
     }

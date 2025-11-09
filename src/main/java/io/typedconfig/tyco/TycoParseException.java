@@ -4,49 +4,57 @@ package io.typedconfig.tyco;
  * Exception thrown when there are errors parsing Tyco configuration files
  */
 public class TycoParseException extends RuntimeException {
-    private final int lineNumber;
-    private final String line;
+    private final SourceLocation location;
 
-    /**
-     * Create a parse exception with line information
-     * @param message Error message
-     * @param lineNumber Line number where error occurred (1-based)
-     * @param line The line content that caused the error
-     */
+    private static String formatMessage(String message, SourceLocation location) {
+        if (location == null) {
+            return message;
+        }
+        StringBuilder builder = new StringBuilder();
+        String prefix = location.toString();
+        if (!prefix.isEmpty()) {
+            builder.append(prefix).append(" - ");
+        }
+        builder.append(message);
+        if (location.getLineText() != null && !location.getLineText().isEmpty()) {
+            builder.append(System.lineSeparator())
+                .append("    ")
+                .append(location.getLineText());
+        }
+        return builder.toString();
+    }
+
+    public TycoParseException(String message, SourceLocation location) {
+        super(formatMessage(message, location));
+        this.location = location;
+    }
+
     public TycoParseException(String message, int lineNumber, String line) {
-        super(String.format("%s at line %d: %s", message, lineNumber, line));
-        this.lineNumber = lineNumber;
-        this.line = line;
+        this(message, new SourceLocation(null, lineNumber, 1, line));
     }
 
-    /**
-     * Create a parse exception with just a message
-     * @param message Error message
-     */
     public TycoParseException(String message) {
-        super(message);
-        this.lineNumber = -1;
-        this.line = null;
+        this(message, (SourceLocation) null);
     }
-    
-    /**
-     * Create a parse exception with message and cause
-     * @param message Error message
-     * @param cause Underlying exception
-     */
+
     public TycoParseException(String message, Throwable cause) {
-        super(message, cause);
-        this.lineNumber = -1;
-        this.line = null;
+        this(message, cause, null);
     }
 
+    public TycoParseException(String message, Throwable cause, SourceLocation location) {
+        super(formatMessage(message, location), cause);
+        this.location = location;
+    }
 
+    public SourceLocation getLocation() {
+        return location;
+    }
 
     public int getLineNumber() {
-        return lineNumber;
+        return location != null ? location.getLine() : -1;
     }
 
     public String getLine() {
-        return line;
+        return location != null ? location.getLineText() : null;
     }
 }
