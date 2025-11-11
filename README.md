@@ -40,28 +40,60 @@ mvn -Dmaven.repo.local=/path/to/.m2 test
 
 ## Usage
 
+The repository bundles the canonical configuration sample under `tyco/example.tyco`
+([view on GitHub](https://github.com/typedconfig/tyco-java/blob/main/tyco/example.tyco)).
+
 ```java
 import io.typedconfig.tyco.TycoParser;
 
+Map<String, Object> config = TycoParser.load("tyco/example.tyco");
 
-// Parse the bundled example.tyco file
-Map<String, Object> context = TycoParser.load("examples/example.tyco");
+String environment = (String) config.get("environment");
+Boolean debug = (Boolean) config.get("debug");
+Number timeout = (Number) config.get("timeout");
 
-// Access global configuration values
-Map<String, Object> globals = (Map<String, Object>) context.get("globals");
-String environment = (String) globals.get("environment");
-Boolean debug = (Boolean) globals.get("debug");
-Double timeout = (Double) globals.get("timeout");
-
-// Get all instances as lists
-Map<String, Object> objects = (Map<String, Object>) context.get("objects");
-List<Map<String, Object>> databases = (List<Map<String, Object>>) objects.get("Database");
-List<Map<String, Object>> servers = (List<Map<String, Object>>) objects.get("Server");
-
-// Access individual instance fields
+@SuppressWarnings("unchecked")
+List<Map<String, Object>> databases = (List<Map<String, Object>>) config.get("Database");
 Map<String, Object> primaryDb = databases.get(0);
 String dbHost = (String) primaryDb.get("host");
-Integer dbPort = (Integer) primaryDb.get("port");
+Number dbPort = (Number) primaryDb.get("port");
+```
+
+### Example Tyco File
+
+```
+tyco/example.tyco
+```
+
+```tyco
+# Global configuration with type annotations
+str environment: production
+bool debug: false
+int timeout: 30
+
+# Database configuration struct
+Database:
+ *str name:           # Primary key field (*)
+  str host:
+  int port:
+  str connection_string:
+  # Instances
+  - primary, localhost,    5432, "postgresql://localhost:5432/myapp"
+  - replica, replica-host, 5432, "postgresql://replica-host:5432/myapp"
+
+# Server configuration struct  
+Server:
+ *str name:           # Primary key for referencing
+  int port:
+  str host:
+  ?str description:   # Nullable field (?) - can be null
+  # Server instances
+  - web1,    8080, web1.example.com,    description: "Primary web server"
+  - api1,    3000, api1.example.com,    description: null
+  - worker1, 9000, worker1.example.com, description: "Worker number 1"
+
+# Feature flags array
+str[] features: [auth, analytics, caching]
 ```
 
 ## Development Notes
