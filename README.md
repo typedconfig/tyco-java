@@ -43,23 +43,25 @@ mvn -Dmaven.repo.local=/path/to/.m2 test
 ```java
 import io.typedconfig.tyco.TycoParser;
 
-Map<String, Object> globals = TycoParser.load("config.tyco");
-System.out.println(globals.get("environment"));
+// Parse a Tyco configuration file
+Map<String, Object> context = TycoParser.load("config.tyco");
+
+// Access global configuration values
+Map<String, Object> globals = (Map<String, Object>) context.get("globals");
+String environment = (String) globals.get("environment");
+Boolean debug = (Boolean) globals.get("debug");
+Double timeout = (Double) globals.get("timeout");
+
+// Get all instances as lists
+Map<String, Object> objects = (Map<String, Object>) context.get("objects");
+List<Map<String, Object>> databases = (List<Map<String, Object>>) objects.get("Database");
+List<Map<String, Object>> servers = (List<Map<String, Object>>) objects.get("Server");
+
+// Access individual instance fields
+Map<String, Object> primaryDb = databases.get(0);
+String dbHost = (String) primaryDb.get("host");
+Integer dbPort = (Integer) primaryDb.get("port");
 ```
-
-For inline content:
-
-```java
-String content = """
-str environment: "production"
-int port: 8080
-bool debug: false
-""";
-
-Map<String, Object> result = TycoParser.loads(content);
-```
-
-Struct instances are emitted as `List<Map<String,Object>>` entries keyed by the struct name, matching the Python and JS outputs.
 
 ## Development Notes
 
