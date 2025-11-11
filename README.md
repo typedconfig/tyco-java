@@ -43,8 +43,9 @@ mvn -Dmaven.repo.local=/path/to/.m2 test
 ```java
 import io.typedconfig.tyco.TycoParser;
 
-// Parse a Tyco configuration file
-Map<String, Object> context = TycoParser.load("config.tyco");
+
+// Parse the bundled example.tyco file
+Map<String, Object> context = TycoParser.load("examples/example.tyco");
 
 // Access global configuration values
 Map<String, Object> globals = (Map<String, Object>) context.get("globals");
