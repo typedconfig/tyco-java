@@ -134,30 +134,37 @@ public class TycoContext {
     }
     
     /**
-     * Converts to JSON-like structure
+     * Materializes a single object (globals + struct arrays) analogous to the Python binding.
      */
-    public Map<String, Object> toJson() {
-        Map<String, Object> result = new HashMap<>();
-        
-        // Add globals
+    public Map<String, Object> toObject() {
+        Map<String, Object> result = new LinkedHashMap<>();
+
         for (Map.Entry<String, TycoAttribute> entry : globals.entrySet()) {
             result.put(entry.getKey(), entry.getValue().toJson());
         }
-        
-        // Add struct instances (only those with primary keys)
+
         for (TycoStruct struct : structs.values()) {
-            if (!struct.getPrimaryKeys().isEmpty()) {
-                List<Map<String, Object>> instances = new ArrayList<>();
-                for (TycoInstance instance : struct.getInstances()) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> json = (Map<String, Object>) instance.toJson();
-                    instances.add(json);
-                }
-                result.put(struct.getTypeName(), instances);
+            if (struct.getPrimaryKeys().isEmpty()) {
+                continue;
             }
+            List<Map<String, Object>> instances = new ArrayList<>();
+            for (TycoInstance instance : struct.getInstances()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> json = (Map<String, Object>) instance.toJson();
+                instances.add(json);
+            }
+            result.put(struct.getTypeName(), instances);
         }
-        
+
         return result;
+    }
+
+    /**
+     * @deprecated Use {@link #toObject()} instead.
+     */
+    @Deprecated
+    public Map<String, Object> toJson() {
+        return toObject();
     }
 
     TycoLexer getCachedLexer(String path) {

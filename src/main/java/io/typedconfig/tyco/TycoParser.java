@@ -51,7 +51,7 @@ public final class TycoParser {
         }
 
         context.renderContent();
-        return context.toJson();
+        return context.toObject();
     }
 
     /**
@@ -66,7 +66,7 @@ public final class TycoParser {
         TycoLexer lexer = new TycoLexer(context, lines, null);
         lexer.process();
         context.renderContent();
-        return context.toJson();
+        return context.toObject();
     }
 
     /**
