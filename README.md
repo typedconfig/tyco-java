@@ -48,15 +48,18 @@ import io.typedconfig.tyco.TycoParser;
 
 Map<String, Object> config = TycoParser.load("tyco/example.tyco");
 
-String environment = (String) config.get("environment");
-Boolean debug = (Boolean) config.get("debug");
-Number timeout = (Number) config.get("timeout");
+String timezone = (String) config.get("timezone");
+System.out.println("timezone=" + timezone);
 
 @SuppressWarnings("unchecked")
-List<Map<String, Object>> databases = (List<Map<String, Object>>) config.get("Database");
-Map<String, Object> primaryDb = databases.get(0);
-String dbHost = (String) primaryDb.get("host");
-Number dbPort = (Number) primaryDb.get("port");
+List<Map<String, Object>> applications = (List<Map<String, Object>>) config.get("Application");
+Map<String, Object> primaryApp = applications.get(0);
+System.out.println("primary service -> " + primaryApp.get("service") + \" (\" + primaryApp.get("command") + \")\");
+
+@SuppressWarnings("unchecked")
+List<Map<String, Object>> hosts = (List<Map<String, Object>>) config.get("Host");
+Map<String, Object> backupHost = hosts.get(1);
+System.out.println("host " + backupHost.get("hostname") + \" cores=\" + backupHost.get("cores"));
 ```
 
 ### Example Tyco File
@@ -66,34 +69,31 @@ tyco/example.tyco
 ```
 
 ```tyco
-# Global configuration with type annotations
-str environment: production
-bool debug: false
-int timeout: 30
+str timezone: UTC  # this is a global config setting
 
-# Database configuration struct
-Database:
- *str name:           # Primary key field (*)
-  str host:
-  int port:
-  str connection_string:
-  # Instances
-  - primary, localhost,    5432, "postgresql://localhost:5432/myapp"
-  - replica, replica-host, 5432, "postgresql://replica-host:5432/myapp"
+Application:       # schema defined first, followed by instance creation
+  str service:
+  str profile:
+  str command: start_app {service}.{profile} -p {port.number}
+  Host host:
+  Port port: Port(http_web)  # reference to Port instance defined below
+  - service: webserver, profile: primary, host: Host(prod-01-us)
+  - service: webserver, profile: backup,  host: Host(prod-02-us)
+  - service: database,  profile: mysql,   host: Host(prod-02-us), port: Port(http_mysql)
 
-# Server configuration struct  
-Server:
- *str name:           # Primary key for referencing
-  int port:
-  str host:
-  ?str description:   # Nullable field (?) - can be null
-  # Server instances
-  - web1,    8080, web1.example.com,    description: "Primary web server"
-  - api1,    3000, api1.example.com,    description: null
-  - worker1, 9000, worker1.example.com, description: "Worker number 1"
+Host:
+ *str hostname:  # star character (*) used as reference primary key
+  int cores:
+  bool hyperthreaded: true
+  str os: Debian
+  - prod-01-us, cores: 64, hyperthreaded: false
+  - prod-02-us, cores: 32, os: Fedora
 
-# Feature flags array
-str[] features: [auth, analytics, caching]
+Port:
+ *str name:
+  int number:
+  - http_web,   80  # can skip field keys when obvious
+  - http_mysql, 3306
 ```
 
 ## Development Notes
