@@ -1,8 +1,11 @@
 package io.typedconfig.tyco;
 
 import java.math.BigDecimal;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -206,21 +209,38 @@ public class TycoValue implements TycoAttribute {
             }
 
             String[] parts = templateVar.split("\\.");
-            for (int i = 0; i < parts.length; i++) {
-                String attr = parts[i];
-                if (i == 0 && "global".equals(attr)) {
-                    obj = context.getGlobals();
+            if (parts.length == 0) {
+                throw new TycoParseException("Empty template content", location);
+            }
+            Deque<String> queue = new ArrayDeque<>();
+            for (String part : parts) {
+                if (!part.isEmpty()) {
+                    queue.addLast(part);
+                }
+            }
+            if (queue.isEmpty()) {
+                throw new TycoParseException("Empty template content", location);
+            }
+            String firstSegment = queue.peekFirst();
+            while (!queue.isEmpty()) {
+                String attr = queue.peekFirst();
+                Object next = tryGetAttribute(obj, attr);
+                if (next != null) {
+                    obj = next;
+                    queue.removeFirst();
                     continue;
                 }
-                if (obj instanceof TycoInstance) {
-                    obj = ((TycoInstance) obj).get(attr);
-                } else if (obj instanceof TycoReference) {
-                    obj = ((TycoReference) obj).get(attr);
-                } else if (obj instanceof Map) {
-                    obj = ((Map<?, ?>) obj).get(attr);
-                } else {
-                    throw new TycoParseException("Cannot access attribute " + attr + " on " + obj, location);
+                if (queue.size() > 1) {
+                    String merged = queue.removeFirst() + "." + queue.removeFirst();
+                    queue.addFirst(merged);
+                    continue;
                 }
+                if ("global".equals(attr) && Objects.equals(firstSegment, "global")) {
+                    obj = context.getGlobals();
+                    queue.removeFirst();
+                    continue;
+                }
+                throw new TycoParseException("Cannot access attribute " + attr + " on " + obj, location);
             }
 
             String replacement;
@@ -238,6 +258,25 @@ public class TycoValue implements TycoAttribute {
 
         matcher.appendTail(buffer);
         this.rendered = TycoUtils.subEscapeSequences(buffer.toString());
+    }
+
+    private Object tryGetAttribute(Object target, String attr) {
+        if (target instanceof TycoInstance) {
+            return ((TycoInstance) target).get(attr);
+        }
+        if (target instanceof TycoReference) {
+            return ((TycoReference) target).get(attr);
+        }
+        if (target instanceof Map<?, ?>) {
+            return ((Map<?, ?>) target).get(attr);
+        }
+        if (target instanceof TycoAttribute) {
+            Object renderedAttr = ((TycoAttribute) target).getRendered();
+            if (renderedAttr instanceof Map<?, ?>) {
+                return ((Map<?, ?>) renderedAttr).get(attr);
+            }
+        }
+        return null;
     }
 
     @Override

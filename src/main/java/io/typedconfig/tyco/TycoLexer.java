@@ -23,13 +23,14 @@ import java.util.regex.Pattern;
 public class TycoLexer {
 
     private static final String IRE = "((?!\\d)\\w+)";
+    private static final String ATTR_IRE = "((?!\\d)[\\w\\.]+)";
     private static final Pattern INCLUDE_REGEX = Pattern.compile("^#include\\s+(\\S.*)$");
-    private static final Pattern GLOBAL_SCHEMA_REGEX = Pattern.compile("^([?])?" + IRE + "(\\[\\])?\\s+" + IRE + "\\s*:");
+    private static final Pattern GLOBAL_SCHEMA_REGEX = Pattern.compile("^([?])?" + IRE + "(\\[\\])?\\s+" + ATTR_IRE + "\\s*:");
     private static final Pattern STRUCT_BLOCK_REGEX = Pattern.compile("^" + IRE + ":");
-    private static final Pattern STRUCT_SCHEMA_REGEX = Pattern.compile("^\\s+([*?])?" + IRE + "(\\[\\])?\\s+" + IRE + "\\s*:");
-    private static final Pattern STRUCT_DEFAULTS_REGEX = Pattern.compile("^\\s+" + IRE + "\\s*:");
+    private static final Pattern STRUCT_SCHEMA_REGEX = Pattern.compile("^\\s+([*?])?" + IRE + "(\\[\\])?\\s+" + ATTR_IRE + "\\s*:");
+    private static final Pattern STRUCT_DEFAULTS_REGEX = Pattern.compile("^\\s+" + ATTR_IRE + "\\s*:");
     private static final Pattern STRUCT_INSTANCE_REGEX = Pattern.compile("^\\s*-");
-    private static final Pattern IDENTIFIER_COLON_REGEX = Pattern.compile("^" + IRE + "\\s*:\\s*");
+    private static final Pattern IDENTIFIER_COLON_REGEX = Pattern.compile("^" + ATTR_IRE + "\\s*:\\s*");
     private static final String EOL = "\n";
 
     private final TycoContext context;
